@@ -501,3 +501,15 @@ sys_mmap(void)
 
   return (uint64)-1;
 }
+
+uint64
+sys_munmap(void)
+{
+  uint64 addr;
+  int length;
+
+  argaddr(0, &addr);    // void *addr
+  argint(1, &length);   // int length
+
+  return (uint64)-1;
+}

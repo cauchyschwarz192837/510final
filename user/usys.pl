@@ -39,3 +39,4 @@ entry("uptime");
 entry("ntas");
 entry("nfree");
 entry("mmap");
+entry("munmap");
