@@ -106,7 +106,7 @@ struct proc {
   uint64 trap_va;              // trapframe va for threads
   
   struct mapped_region mapped_regions[16];      // arbitrary number 16
-  uint64 mapped_region_top;                     // free virtual address start
+  uint64 mapped_region_top;      // the next free VA to hand out new mapped_region from
 };
 
 struct mapped_region {

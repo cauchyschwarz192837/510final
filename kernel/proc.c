@@ -126,7 +126,8 @@ found:
   for (int i = 0; i < 16; i++){
     p->mapped_regions[i].in_use = 0;
   }
-
+  
+  p->mapped_region_top = TRAPFRAME; // first mmap will carve space just below TRAPFRAME, then keep moving downward
   return p;
 }
 
