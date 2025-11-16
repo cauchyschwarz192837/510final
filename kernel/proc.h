@@ -104,4 +104,15 @@ struct proc {
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
   uint64 trap_va;              // trapframe va for threads
+  struct mapped_region mapped_regions[16];      // arbitrary number 16
+};
+
+struct mapped_region {
+  uint64 start_address;        // start virtual address
+  uint64 sz;                   // Size of mapped region in bytes
+  int prot;
+  int flags;
+  int offset;
+  int in_use;
+  struct file *mapped_file;    // The VMA should contain a pointer to a struct file for the file being mapped 
 };

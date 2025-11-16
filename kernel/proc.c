@@ -122,6 +122,10 @@ found:
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
+  
+  for (int i = 0; i < 16; i++){
+    p->mapped_regions[i].in_use = 0;
+  }
 
   return p;
 }
