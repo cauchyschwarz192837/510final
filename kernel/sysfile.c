@@ -491,6 +491,11 @@ sys_mmap(void)
 {
   struct proc *p = myproc();
 
+  // Snapshot heap size before first mmap
+  if (p->o_sz == -1) {
+    p->o_sz = p->sz;
+  }
+
   // JUST READING ARGUMENTS
   uint64 addr;
   int len, prot, flags, fd;

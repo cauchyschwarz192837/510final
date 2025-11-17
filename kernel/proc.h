@@ -107,6 +107,7 @@ struct proc {
   
   struct mapped_region mapped_regions[16];      // arbitrary number 16
   uint64 mapped_region_top;                     // free virtual address start
+  int o_sz;
 };
 
 struct mapped_region {

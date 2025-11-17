@@ -128,6 +128,9 @@ found:
   }
   
   p->mapped_region_top = TRAPFRAME; // first mmap will carve space just below TRAPFRAME, then keep moving downward
+  
+  p->o_sz = -1;
+
   return p;
 }
 
@@ -269,6 +272,8 @@ fork(void)
   np->sz = p->sz;
 
   np->parent = p;
+  
+  np->o_sz = p->o_sz;
 
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
