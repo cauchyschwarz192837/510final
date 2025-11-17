@@ -270,10 +270,27 @@ fork(void)
     return -1;
   }
   np->sz = p->sz;
-
   np->parent = p;
-  
   np->o_sz = p->o_sz;
+  
+  // MAPPED_REGION HANDLING
+  for (int i = 0; i < 16; i++) {
+    np->mapped_regions[i] = p->mapped_regions[i];  // JUST COPY ALL FIRST
+    if (np->mapped_regions[i].in_use && np->mapped_regions[i].mapped_file) {  // if it is MAPPED TO A FILE, WE MUST UP REFERENCE COUNT
+      filedup(np->mapped_regions[i].mapped_file); // NOTE: PARENT AND CHILD SHARING SAME FILE STRUCT
+    }
+  }
+
+  /*
+  struct file*
+	filedup(struct file *f)
+	{
+  	  acquire(&ftable.lock);
+  	  f->ref++;
+  	  release(&ftable.lock);
+  	  return f;
+	}
+  */
 
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
@@ -284,7 +301,7 @@ fork(void)
   // increment reference counts on open file descriptors.
   for(i = 0; i < NOFILE; i++)
     if(p->ofile[i])
-      np->ofile[i] = filedup(p->ofile[i]);
+      np->ofile[i] = filedup(p->ofile[i]);  // filedup does ref++
   np->cwd = idup(p->cwd);
 
   safestrcpy(np->name, p->name, sizeof(p->name));

@@ -510,7 +510,27 @@ sys_mmap(void)
     return (uint64)-1; 
   }
   
+  // CHECK FOR FIRST FREE SLOT
+  int slot = 0;
+  for (int i = 0; i < 16; i++) {
+    if (p->mapped_regions[i].in_use == 0) {
+      slot = i;
+      break;
+    }
+  }
+
+  // GOTTEN THE RIGHT SLOT
+
   
+
+
+
+
+
+
+
+
+
 
   /*
   struct file {
