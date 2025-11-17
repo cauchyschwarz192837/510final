@@ -10,7 +10,7 @@
 #include "param.h"
 #include "stat.h"
 #include "spinlock.h"
-3ds#include "proc.h"
+#include "proc.h"
 #include "fs.h"
 #include "sleeplock.h"
 #include "file.h"
@@ -489,38 +489,23 @@ sys_pipe(void)
 uint64
 sys_mmap(void)
 {
-  struct proc *p = myproc();
-
   // JUST READING ARGUMENTS
   uint64 addr;
-  int len, prot, flags, fd;
-  struct file *f;
+  int len, prot, flags, fd, offset;
 
-  if (argaddr(0, &addr) < 0) || argint(1, &len) < 0 || argint(2, &prot) < 0 || argint(3, &flags) < 0 || argfd(4, &fd, &f) < 0) {
-    return 0xffffffffffffffff;
-  }  
+  argaddr(0, &addr);
+  argint(1, &len);
+  argint(2, &prot);
+  argint(3, &flags);
+  argint(4, &fd);
+  argint(5, &offset);
 
-  // CHECK ARGUMENTS (CASES)
-  if (len <= 0 || (!f->writable && (prot & PROT_WRITE) && (flags == MAP_SHARED))) {
+  struct proc *p = myproc();
+  
+  // CHECKS VALID ARGS
+  if (length <= 0 || fd < 0 || fd >= NOFILE) {
     return (uint64)-1; 
   }
-  
-  
-
-  /*
-  struct file {
-    enum { FD_NONE, FD_PIPE, FD_INODE } type;
-    int ref;
-    char readable;
-    char writable;
-    struct pipe *pipe;
-    struct inode *ip;
-    uint off;
-  };
-  */
-
-  // FROM PROCESS FILE TABLE
-  struct file *f = p->ofile[fd]; 
 
 }
 
@@ -535,4 +520,3 @@ sys_munmap(void)
 
   return (uint64)-1;
 }
-

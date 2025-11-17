@@ -111,7 +111,7 @@ struct proc {
 
 struct mapped_region {
   uint64 start_address;        // start virtual address
-  uint64 sz;                   // Size of mapped region in bytes
+  uint64 end_address;          // end virtual address
   int prot;
   int flags;
   int offset;
