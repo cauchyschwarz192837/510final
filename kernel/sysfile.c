@@ -10,7 +10,7 @@
 #include "param.h"
 #include "stat.h"
 #include "spinlock.h"
-3ds#include "proc.h"
+#include "proc.h"
 #include "fs.h"
 #include "sleeplock.h"
 #include "file.h"
@@ -519,17 +519,17 @@ sys_mmap(void)
     }
   }
 
-  // GOTTEN THE RIGHT SLOT
-
-  
-
-
-
+  // GOTTEN THE RIGHT, VALID SLOT
+  if (slot != 16) {
+    
+    // NOTE REF IS IN STRUCT FILE
 
 
 
 
 
+
+  }  
 
 
   /*

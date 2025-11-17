@@ -280,6 +280,7 @@ fork(void)
       filedup(np->mapped_regions[i].mapped_file); // NOTE: PARENT AND CHILD SHARING SAME FILE STRUCT
     }
   }
+  np->mapped_region_top = p->mapped_region_top;
 
   /*
   struct file*
