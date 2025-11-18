@@ -32,6 +32,8 @@ trapinithart(void)
   w_stvec((uint64)kernelvec);
 }
 
+//-----------------------------------------------------------------------------------------------------
+
 //
 // handle an interrupt, exception, or system call from user space.
 // called from trampoline.S
@@ -68,6 +70,10 @@ usertrap(void)
     intr_on();
 
     syscall();
+  } else if ((r_scause() & 0xff) == 13 || (r_scause() & 0xff) == 15) {  // TO HANDLE PAGE FAULT
+      if (read_mapping(p->pagetable, r_stval()) < 0) {
+        p->killed = 1;
+      }
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
@@ -85,6 +91,79 @@ usertrap(void)
 
   usertrapret();
 }
+
+
+int read_mapping(pagetable_t pagetable, uint64 va) {
+  struct proc *p = myproc();
+
+  // reject bogus addresses above MAXVA, but no compare with p->sz
+  if (va >= MAXVA) {
+    return -1;
+  }
+
+  // work with page-aligned va
+  uint64 va_page = PGROUNDDOWN(va);
+
+  // find mapped_region that covers this va
+  struct mapped_region *r = 0;
+  for (int i = 0; i < 16; i++) {
+    if (p->mapped_regions[i].in_use && va_page >= p->mapped_regions[i].start_address && va_page <  p->mapped_regions[i].end_address) {
+      r = &p->mapped_regions[i];
+      break;
+    }
+  }
+
+  if (r == 0) {
+    return -1;   // not in any mmap region
+  }
+
+  uint64 start = r->start_address;
+  int prot = r->prot;
+  struct file *pf = r->mapped_file;
+
+  // allocate physical page
+  char *mem = (char *)kalloc();
+  if (mem == 0) {
+    return -1;
+  }
+
+  memset(mem, 0, PGSIZE);
+
+  // compute file offset: mapping_offset + offset_within_mapping
+  uint64 off_in_mapping = va_page - start;      // how far into mapping
+  uint64 file_off = r->offset + off_in_mapping;
+
+  // read file data for this page
+  begin_op();
+  ilock(pf->ip);
+  int n = readi(pf->ip, 0, (uint64)mem, file_off, PGSIZE);
+  iunlock(pf->ip);
+  end_op();
+
+  if (n < 0) {
+    kfree(mem);
+    return -1;
+  }
+  // if n < PGSIZE, rest stays zero — that's correct mmap behavior
+
+  // build PTE flags from prot
+  int flags = PTE_U;
+  if (prot & PROT_READ) {
+    flags |= PTE_R;
+  }
+  if (prot & PROT_WRITE) {
+    flags |= PTE_W;
+  }
+
+  if (mappages(pagetable, va_page, PGSIZE, (uint64)mem, flags) != 0) {
+    kfree(mem);
+    return -1;
+  }
+
+  return 0;
+}
+
+//-----------------------------------------------------------------------------------------------------
 
 //
 // return to user space
