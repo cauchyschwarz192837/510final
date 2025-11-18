@@ -501,7 +501,7 @@ sys_mmap(void)
   int len, prot, flags, fd;
   struct file *f;
 
-  if (argaddr(0, &addr) < 0) || argint(1, &len) < 0 || argint(2, &prot) < 0 || argint(3, &flags) < 0 || argfd(4, &fd, &f) < 0) {
+  if (argaddr(0, &addr) < 0 || argint(1, &len) < 0 || argint(2, &prot) < 0 || argint(3, &flags) < 0 || argfd(4, &fd, &f) < 0) {
     return 0xffffffffffffffff;
   }  
 
@@ -511,7 +511,7 @@ sys_mmap(void)
   }
   
   // CHECK FOR FIRST FREE SLOT
-  int slot = 0;
+  int slot = -1;
   for (int i = 0; i < 16; i++) {
     if (p->mapped_regions[i].in_use == 0) {
       slot = i;
@@ -519,34 +519,34 @@ sys_mmap(void)
     }
   }
 
-  // GOTTEN THE RIGHT, VALID SLOT
-  if (slot != 16) {
-    
-    // NOTE REF IS IN STRUCT FILE
+  // NO FREE SLOTS
+  if (slot < 0) {
+    return (uint64)-1;  // no free mapping slot
+  }
 
+  // STUFF STILL NEED TO DO!
+  // Round len up to a multiple of PGSIZE (we allocate memory in terms of pages)
+  // Choose a start virtual address using p->mapped_region_top (grow downward).
+  // Fill p->mapped_regions[slot] with all the info.
+  // filedup(f) to bump refcount and store in mapped_file.
+  // Return the start address.
 
+  uint64 all_len = PGROUNDUP(len);
+  p->mapped_region_top -= all_len;
+  uint64 start = p->mapped_region_top; // ignoring the user-suggested addr
+  uint64 end = start + all_len;
 
+  struct mapped_region *dummy = &p->mapped_regions[slot];
+  dummy->start_address = start;
+  dummy->end_address = end;
+  dummy->prot = prot;
+  dummy->flags = flags;
+  dummy->offset = offset;
+  dummy->in_use = 1;
+  dummy->mapped_file = filedup(f);
 
-
-
-  }  
-
-
-  /*
-  struct file {
-    enum { FD_NONE, FD_PIPE, FD_INODE } type;
-    int ref;
-    char readable;
-    char writable;
-    struct pipe *pipe;
-    struct inode *ip;
-    uint off;
-  };
-  */
-
-  // FROM PROCESS FILE TABLE
-  struct file *f = p->ofile[fd]; 
-
+  return start;
+  
 }
 
 uint64
