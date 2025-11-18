@@ -1,4 +1,6 @@
 // Saved registers for kernel context switches.
+#define MAPNUM 16 
+
 struct context {
   uint64 ra;
   uint64 sp;
@@ -82,6 +84,16 @@ struct trapframe {
 
 enum procstate { UNUSED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
+struct mapped_region {
+  uint64 start_address;        // start virtual address
+  uint64 end_address;          // end virtual address
+  int prot;
+  int flags;
+  int offset;
+  int in_use;
+  struct file *mapped_file;    // The VMA should contain a pointer to a struct file for the file being map
+};
+
 // Per-process state
 struct proc {
   struct spinlock lock;
@@ -105,17 +117,7 @@ struct proc {
   char name[16];               // Process name (debugging)
   uint64 trap_va;              // trapframe va for threads
   
-  struct mapped_region mapped_regions[16];      // arbitrary number 16
+  struct mapped_region mapped_regions[MAPNUM];      // arbitrary number 16
   uint64 mapped_region_top;                     // free virtual address start
   int o_sz;
-};
-
-struct mapped_region {
-  uint64 start_address;        // start virtual address
-  uint64 end_address;          // end virtual address
-  int prot;
-  int flags;
-  int offset;
-  int in_use;
-  struct file *mapped_file;    // The VMA should contain a pointer to a struct file for the file being mapped 
 };

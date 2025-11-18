@@ -541,7 +541,7 @@ sys_mmap(void)
   dummy->end_address = end;
   dummy->prot = prot;
   dummy->flags = flags;
-  dummy->offset = offset;
+  dummy->offset = 0;
   dummy->in_use = 1;
   dummy->mapped_file = filedup(f);
 
