@@ -500,8 +500,9 @@ sys_mmap(void)
   uint64 addr;
   int len, prot, flags, fd;
   struct file *f;
+  uint64 offset;
 
-  if (argaddr(0, &addr) < 0 || argint(1, &len) < 0 || argint(2, &prot) < 0 || argint(3, &flags) < 0 || argfd(4, &fd, &f) < 0) {
+  if (argaddr(0, &addr) < 0 || argint(1, &len) < 0 || argint(2, &prot) < 0 || argint(3, &flags) < 0 || argfd(4, &fd, &f) < 0 || argaddr(5, &offset) < 0 ) {
     return 0xffffffffffffffff;
   }  
 
@@ -509,7 +510,10 @@ sys_mmap(void)
   if (len <= 0 || (!f->writable && (prot & PROT_WRITE) && (flags == MAP_SHARED))) {
     return (uint64)-1; 
   }
-  
+  if((prot & PROT_READ) && !f->readable){
+    return -1;
+  }
+
   // CHECK FOR FIRST FREE SLOT
   int slot = -1;
   for (int i = 0; i < 16; i++) {
@@ -555,9 +559,56 @@ sys_munmap(void)
   uint64 addr;
   int length;
 
-  argaddr(0, &addr);    // void *addr
-  argint(1, &length);   // int length
+  if(argaddr(0, &addr) < 0 || argint(1, &length) < 0 || length == 0){
+    return -1;
+  }
 
-  return (uint64)-1;
+  struct proc* p = myproc();
+  //maybe it can be abstracted 
+  struct mapped_region *r = 0;
+  for(int i = 0; i < 16; ++i) {
+    if (p->mapped_regions[i].in_use && addr >= p->mapped_regions[i].start_address && addr <  p->mapped_regions[i].end_address) {
+      r = &p->mapped_regions[i];
+      break;
+        }
+    }
+  if (r == 0) {
+    return -1;   // not in any mmap region
+  }
+
+  if(addr > r->start_address && addr + length < r->end_address){
+    return -1; //not deal with split vma in the middle
+  }
+  uint64 addr_alinged = addr;
+  if(addr > r->start_address){
+    addr_alinged = PGROUNDUP(addr);
+  }
+
+  int num = length - (addr_alinged - addr); //free size
+  if(num < 0){
+    num = 0;
+  }
+  mapped_region_unmap(p->pagetable, addr_alinged, num, r);
+
+  // if(addr <= r->start_address && addr+length > r->start_address){
+  //   r->offset += addr + length - r->start_address;
+  //   r->start_address = addr + length;
+  // }
+  // r->end_address -= length;
+
+  if(addr == r->start_address){
+        // 从起始位置释放
+        r->start_address += length;
+        r->offset += length;
+    } else if(addr + length == r->end_address){
+        // 从结束位置释放
+        r->end_address -= length;
+    }
+
+  if((r->end_address - r->start_address) <= 0){
+    fileclose(r->mapped_file);
+    r->in_use = 0;
+  }
+  return 0;
 }
 

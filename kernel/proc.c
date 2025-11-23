@@ -143,6 +143,19 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
+  for(int i = 0; i < 16; i++){
+    struct mapped_region* r = &p->mapped_regions[i];
+    if(r->in_use) {
+      uint64 sz = r->end_address - r->start_address;
+      if(sz > 0) {
+        mapped_region_unmap(p->pagetable, r->start_address, sz, r);
+      }
+      if(r->mapped_file) {
+        fileclose(r->mapped_file);
+      }
+      r->in_use = 0;
+    }
+  }
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;

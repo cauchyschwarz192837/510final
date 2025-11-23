@@ -2,6 +2,7 @@ struct buf;
 struct context;
 struct file;
 struct inode;
+struct mapped_region;
 struct pipe;
 struct proc;
 struct spinlock;
@@ -171,6 +172,7 @@ uint64          kwalkaddr(pagetable_t, uint64);
 int             copyout(pagetable_t, uint64, char *, uint64);
 int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
+void            mapped_region_unmap(pagetable_t, uint64, uint64, struct mapped_region*);
 
 // plic.c
 void            plicinit(void);

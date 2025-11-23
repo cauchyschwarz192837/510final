@@ -5,7 +5,11 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
-
+#include "fcntl.h"
+#include "spinlock.h"
+#include "sleeplock.h"
+#include "file.h"
+#include "proc.h"
 /*
  * the kernel's page table.
  */
@@ -210,6 +214,42 @@ uvminit(pagetable_t pagetable, uchar *src, uint sz)
   memset(mem, 0, PGSIZE);
   mappages(pagetable, 0, PGSIZE, (uint64)mem, PTE_W|PTE_R|PTE_X|PTE_U);
   memmove(mem, src, sz);
+}
+
+//according PTE_D and MAP_SHARED to decide whether write back to the disk
+void mapped_region_unmap(pagetable_t pagetable, uint64 addr, uint64 nbytes, struct mapped_region* r){
+  uint64 a;
+  pte_t* pte;
+
+  for (a = addr; a < addr + nbytes; a += PGSIZE){
+    if((pte = walk(pagetable, a, 0)) == 0){
+      continue;
+    }
+    if(PTE_FLAGS(*pte) == PTE_V){
+      panic("sys_munmap: not mapped");
+    }
+    if(*pte & PTE_V){
+      uint64 phyaddr = PTE2PA(*pte);
+      if((*pte & PTE_D) && (r->flags & MAP_SHARED)){
+        begin_op();
+        ilock(r->mapped_file->ip);
+        uint64 aoff = a - r->start_address;
+        if(aoff < 0){
+          writei(r->mapped_file->ip, 0, phyaddr + (-aoff), r->offset, PGSIZE + aoff);
+        }
+        else if(aoff + PGSIZE > (r->end_address - r->start_address)){
+          writei(r->mapped_file->ip, 0, phyaddr, r->offset + aoff, r->end_address - r->start_address - aoff);
+        }
+        else{
+          writei(r->mapped_file->ip, 0, phyaddr, r->offset + aoff, PGSIZE);
+        }
+        iunlock(r->mapped_file->ip);
+        end_op();
+      }
+      kfree((void*)phyaddr);
+      *pte = 0;
+    }
+  }
 }
 
 // Allocate PTEs and physical memory to grow process from oldsz to

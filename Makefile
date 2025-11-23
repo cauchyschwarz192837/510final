@@ -148,10 +148,10 @@ UPROGS=\
 	$U/_alloctest\
 	$U/_specialtest\
 	$U/_umalloc\
-	# $U/_mmaptest\
-	# $U/_threadtest\
-	# $U/_symlinktest\
-	# $U/_largefiletest\
+	$U/_mmaptest\
+	#$U/_threadtest\
+	#$U/_symlinktest\
+	#$U/_largefiletest\
 
 fs.img: mkfs/mkfs README user/xargstest.sh $(UPROGS)
 	mkfs/mkfs fs.img README user/xargstest.sh $(UPROGS)
