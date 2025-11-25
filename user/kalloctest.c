@@ -24,7 +24,7 @@ void test0()
   void *a, *a1;
   int n = 0;
   printf("start test0\n");  
-  ntas(0);
+  ntas();
   for(int i = 0; i < NCHILD; i++){
     int pid = fork();
     if(pid < 0){
@@ -49,7 +49,7 @@ void test0()
     wait(0);
   }
   printf("test0 results:\n");
-  n = ntas(1);
+  n = ntas();
   if(n < 10) 
     printf("test0 OK\n");
   else

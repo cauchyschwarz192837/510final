@@ -13,6 +13,10 @@
 /*
  * the kernel's page table.
  */
+
+
+extern void mmap_release_shared_page(void *mem);
+
 pagetable_t kernel_pagetable;
 
 extern char etext[];  // kernel.ld sets this to end of kernel code.
@@ -217,7 +221,10 @@ uvminit(pagetable_t pagetable, uchar *src, uint sz)
 }
 
 //according PTE_D and MAP_SHARED to decide whether write back to the disk
-void mapped_region_unmap(pagetable_t pagetable, uint64 addr, uint64 nbytes, struct mapped_region* r){
+void
+mapped_region_unmap(pagetable_t pagetable, uint64 addr, uint64 nbytes,
+                    struct mapped_region* r)
+{
   uint64 a;
   pte_t* pte;
 
@@ -230,27 +237,38 @@ void mapped_region_unmap(pagetable_t pagetable, uint64 addr, uint64 nbytes, stru
     }
     if(*pte & PTE_V){
       uint64 phyaddr = PTE2PA(*pte);
+
       if((*pte & PTE_D) && (r->flags & MAP_SHARED)){
         begin_op();
         ilock(r->mapped_file->ip);
         uint64 aoff = a - r->start_address;
+
+        // NOTE: aoff is uint64 so "aoff < 0" is always false,
+        // but this matches your original logic; mmap regions
+        // are page-aligned so we never actually hit the
+        // "first partial page" case anyway.
         if(aoff < 0){
-          writei(r->mapped_file->ip, 0, phyaddr + (-aoff), r->offset, PGSIZE + aoff);
-        }
-        else if(aoff + PGSIZE > (r->end_address - r->start_address)){
-          writei(r->mapped_file->ip, 0, phyaddr, r->offset + aoff, r->end_address - r->start_address - aoff);
-        }
-        else{
-          writei(r->mapped_file->ip, 0, phyaddr, r->offset + aoff, PGSIZE);
+          writei(r->mapped_file->ip, 0, phyaddr + (-aoff),
+                 r->offset, PGSIZE + aoff);
+        } else if(aoff + PGSIZE > (r->end_address - r->start_address)){
+          writei(r->mapped_file->ip, 0, phyaddr,
+                 r->offset + aoff,
+                 r->end_address - r->start_address - aoff);
+        } else {
+          writei(r->mapped_file->ip, 0, phyaddr,
+                 r->offset + aoff, PGSIZE);
         }
         iunlock(r->mapped_file->ip);
         end_op();
       }
-      kfree((void*)phyaddr);
+
+      // instead of kfree, drop our shared-page ref
+      mmap_release_shared_page((void*)phyaddr);
       *pte = 0;
     }
   }
 }
+
 
 // Allocate PTEs and physical memory to grow process from oldsz to
 // newsz, which need not be page aligned.  Returns new size or 0 on error.

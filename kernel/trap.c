@@ -13,6 +13,207 @@
 struct spinlock tickslock;
 uint ticks;
 
+// -----------------------------------------------------------------------------
+// Shared physical pages for mmap() mappings
+// Keyed by (struct file *f, file_page_number).
+// This lets multiple processes share physical pages when they mmap the same file
+// (e.g., parent/child after fork), which is what we need for shared memory
+// like the Pong game.
+//
+// NOTE: This still uses kalloc() pages, not the buffer cache. That means
+// there's still "double caching" versus the fs buffer cache, but we now
+// share pages across processes and use reference counts.
+// -----------------------------------------------------------------------------
+
+#define MMAP_MAX_PAGES 1024
+
+struct mmap_phys_page {
+  struct file *f;      // which file this page comes from
+  uint64 file_page;    // file offset / PGSIZE
+  char   *mem;         // physical page (kalloc'ed)
+  int     refcnt;      // number of PTEs pointing at this page
+  int     in_use;
+};
+
+static struct mmap_phys_page mmap_pages[MMAP_MAX_PAGES];
+static struct spinlock mmap_pages_lock;
+
+// Called once at boot from procinit().
+void
+mmap_phys_init(void)
+{
+  initlock(&mmap_pages_lock, "mmap_pages");
+  for (int i = 0; i < MMAP_MAX_PAGES; i++) {
+    mmap_pages[i].in_use = 0;
+    mmap_pages[i].f = 0;
+    mmap_pages[i].file_page = 0;
+    mmap_pages[i].mem = 0;
+    mmap_pages[i].refcnt = 0;
+  }
+}
+
+// Internal helper: find entry by (file, file_page)
+static struct mmap_phys_page *
+mmap_find_locked(struct file *f, uint64 file_page)
+{
+  for (int i = 0; i < MMAP_MAX_PAGES; i++) {
+    if (mmap_pages[i].in_use &&
+        mmap_pages[i].f == f &&
+        mmap_pages[i].file_page == file_page) {
+      return &mmap_pages[i];
+    }
+  }
+  return 0;
+}
+
+// Internal helper: find entry by its mem pointer.
+static struct mmap_phys_page *
+mmap_find_by_mem_locked(void *mem)
+{
+  for (int i = 0; i < MMAP_MAX_PAGES; i++) {
+    if (mmap_pages[i].in_use &&
+        mmap_pages[i].mem == (char *)mem) {
+      return &mmap_pages[i];
+    }
+  }
+  return 0;
+}
+
+// Get a shared page for (f, file_off).
+// - file_off must be page aligned.
+// - If a page already exists, bump refcnt and return it.
+// - Otherwise, allocate + read from the file, insert into table, refcnt=1.
+char *
+mmap_get_shared_page(struct file *f, uint64 file_off)
+{
+  if (file_off % PGSIZE != 0) {
+    // we only support page-aligned file offsets for now
+    return 0;
+  }
+  uint64 file_page = file_off / PGSIZE;
+
+  // First try to find an existing page.
+  acquire(&mmap_pages_lock);
+  struct mmap_phys_page *e = mmap_find_locked(f, file_page);
+  if (e) {
+    e->refcnt++;
+    char *mem = e->mem;
+    release(&mmap_pages_lock);
+    return mem;
+  }
+
+  // Not found — we'll have to allocate and read.
+  // Reserve a free slot first so that we don't race with another creator.
+  struct mmap_phys_page *slot = 0;
+  for (int i = 0; i < MMAP_MAX_PAGES; i++) {
+    if (!mmap_pages[i].in_use) {
+      slot = &mmap_pages[i];
+      slot->in_use = 1;
+      slot->f = f;
+      slot->file_page = file_page;
+      slot->mem = 0;
+      slot->refcnt = 0;   // we'll set to 1 after filling
+      break;
+    }
+  }
+  release(&mmap_pages_lock);
+
+  if (slot == 0) {
+    // table full
+    return 0;
+  }
+
+  // Allocate + read file data outside the lock (readi may sleep).
+  char *mem = (char *)kalloc();
+  if (mem == 0) {
+    // roll back reservation
+    acquire(&mmap_pages_lock);
+    slot->in_use = 0;
+    slot->f = 0;
+    slot->file_page = 0;
+    release(&mmap_pages_lock);
+    return 0;
+  }
+  memset(mem, 0, PGSIZE);
+
+  // Read PGSIZE bytes starting at file_off into mem.
+  begin_op();
+  ilock(f->ip);
+  int n = readi(f->ip, 0, (uint64)mem, file_off, PGSIZE);
+  iunlock(f->ip);
+  end_op();
+
+  if (n < 0) {
+    kfree(mem);
+    acquire(&mmap_pages_lock);
+    slot->in_use = 0;
+    slot->f = 0;
+    slot->file_page = 0;
+    release(&mmap_pages_lock);
+    return 0;
+  }
+
+  // Now finalize / deduplicate under the lock.
+  acquire(&mmap_pages_lock);
+  // Maybe someone else created the same page while we were reading.
+  e = mmap_find_locked(f, file_page);
+  if (e && e != slot) {
+    // Another entry won the race. Use it instead.
+    e->refcnt++;
+    char *winner_mem = e->mem;
+    // Free our slot + page.
+    slot->in_use = 0;
+    slot->f = 0;
+    slot->file_page = 0;
+    release(&mmap_pages_lock);
+    kfree(mem);
+    return winner_mem;
+  }
+
+  // We're the first; fill the reserved slot.
+  slot->mem = mem;
+  slot->refcnt = 1;
+  char *ret = mem;
+  release(&mmap_pages_lock);
+  return ret;
+}
+
+// Drop a reference to a shared page. If refcnt drops to 0, free it.
+void
+mmap_release_shared_page(void *mem)
+{
+  if (mem == 0)
+    return;
+
+  acquire(&mmap_pages_lock);
+  struct mmap_phys_page *e = mmap_find_by_mem_locked(mem);
+  if (e == 0) {
+    // Not one of our tracked mmap pages; just drop lock & kfree.
+    release(&mmap_pages_lock);
+    kfree(mem);
+    return;
+  }
+
+  e->refcnt--;
+  if (e->refcnt < 0) {
+    // shouldn't happen
+    e->refcnt = 0;
+  }
+
+  if (e->refcnt == 0) {
+    e->in_use = 0;
+    e->f = 0;
+    e->file_page = 0;
+    char *to_free = e->mem;
+    e->mem = 0;
+    release(&mmap_pages_lock);
+    kfree(to_free);
+    return;
+  }
+
+  release(&mmap_pages_lock);
+}
+
 extern char trampoline[], uservec[], userret[];
 
 // in kernelvec.S, calls kerneltrap().
@@ -37,8 +238,8 @@ trapinithart(void)
 }
 
 //-----------------------------------------------------------------------------------------------------
-
-int read_mapping(pagetable_t pagetable, uint64 va) {
+int
+read_mapping(pagetable_t pagetable, uint64 va) {
   struct proc *p = myproc();
 
   // reject bogus addresses above MAXVA, but no compare with p->sz
@@ -52,7 +253,9 @@ int read_mapping(pagetable_t pagetable, uint64 va) {
   // find mapped_region that covers this va
   struct mapped_region *r = 0;
   for (int i = 0; i < 16; i++) {
-    if (p->mapped_regions[i].in_use && va_page >= p->mapped_regions[i].start_address && va_page <  p->mapped_regions[i].end_address) {
+    if (p->mapped_regions[i].in_use &&
+        va_page >= p->mapped_regions[i].start_address &&
+        va_page <  p->mapped_regions[i].end_address) {
       r = &p->mapped_regions[i];
       break;
     }
@@ -66,30 +269,15 @@ int read_mapping(pagetable_t pagetable, uint64 va) {
   int prot = r->prot;
   struct file *pf = r->mapped_file;
 
-  // allocate physical page
-  char *mem = (char *)kalloc();
-  if (mem == 0) {
-    return -1;
-  }
-
-  memset(mem, 0, PGSIZE);
-
   // compute file offset: mapping_offset + offset_within_mapping
   uint64 off_in_mapping = va_page - start;      // how far into mapping
   uint64 file_off = r->offset + off_in_mapping;
 
-  // read file data for this page
-  begin_op();
-  ilock(pf->ip);
-  int n = readi(pf->ip, 0, (uint64)mem, file_off, PGSIZE);
-  iunlock(pf->ip);
-  end_op();
-
-  if (n < 0) {
-    kfree(mem);
+  // get (or create) a shared physical page for this file offset
+  char *mem = mmap_get_shared_page(pf, file_off);
+  if (mem == 0) {
     return -1;
   }
-  // if n < PGSIZE, rest stays zero — that's correct mmap behavior
 
   // build PTE flags from prot
   int flags = PTE_U;
@@ -101,12 +289,14 @@ int read_mapping(pagetable_t pagetable, uint64 va) {
   }
 
   if (mappages(pagetable, va_page, PGSIZE, (uint64)mem, flags) != 0) {
-    kfree(mem);
+    // on failure, drop the reference we just took
+    mmap_release_shared_page(mem);
     return -1;
   }
 
   return 0;
 }
+
 //-----------------------------------------------------------------------------------
 
 //

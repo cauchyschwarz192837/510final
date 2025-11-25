@@ -92,7 +92,7 @@ test0()
       exit(1);
     }
   }
-  ntas(0);
+  ntas();
   for(int i = 0; i < NCHILD; i++){
     dir[0] = '0' + i;
     int pid = fork();
@@ -116,7 +116,7 @@ test0()
     wait(0);
   }
   printf("test0 results:\n");
-  n = ntas(1);
+  n = ntas();
   if (n == 0)
     printf("test0: OK\n");
   else

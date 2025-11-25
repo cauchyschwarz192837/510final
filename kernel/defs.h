@@ -23,6 +23,11 @@ void            consoleinit(void);
 void            consoleintr(int);
 void            consputc(int);
 
+// defs.h
+void mmap_phys_init(void);
+char *mmap_get_shared_page(struct file *f, uint64 file_off);
+void mmap_release_shared_page(void *mem);
+
 // exec.c
 int             exec(char*, char**);
 
