@@ -1,4 +1,4 @@
-See Project Writeup for details.
+See 510 Project Writeup (Group 13).pdf for details
 
 -------------------------------------------------------------------------------------------------------------------
 
