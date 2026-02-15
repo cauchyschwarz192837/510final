@@ -1,6 +1,6 @@
 # Operating Systems (CS510) Final Project: Inter-Process Communication Through mmap(), munmap() & GPU Driver in xv6
 
-See 510 Project Writeup (Group 13).pdf for details
+See the file "510 Project Writeup (Group 13).pdf" for details
 
 Designed and implemented a full mmap() / munmap() subsystem in the xv6 (RISC-V) kernel by extending the virtual
 memory manager and page-fault handler to support demand paging and file-backed mappings. Introduced a per-process
