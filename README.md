@@ -1,43 +1,18 @@
+# Operating Systems (CS510) Final Project: Inter-Process Communication Through mmap(), munmap() & GPU Driver in xv6
+
 See 510 Project Writeup (Group 13).pdf for details
 
--------------------------------------------------------------------------------------------------------------------
+Designed and implemented a full mmap() / munmap() subsystem in the xv6 (RISC-V) kernel by extending the virtual
+memory manager and page-fault handler to support demand paging and file-backed mappings. Introduced a per-process
+VMA table to track virtual address ranges, permissions, offsets, and backing inodes. Modified the trap handler to detect
+load/store page faults, allocate physical pages lazily, and install PTEs with correct RISC-V permission bits
+(PTE R/W/X/U/V)
 
-vm grows from trapframe to low addr
-```c
-//proc.h
-struct mapped_region {
-  uint64 start_address;        // start virtual address
-  uint64 end_address;          // end virtual address  calculate sz
-  int prot; // virtual memory permission
-  int flags; //mark whether the modifications to the mapped memory are written back to the file
-  int offset; // start point of the mapping file
-  int in_use;
-  struct file *mapped_file;    // The VMA should contain a pointer to a struct file for the file being map
-};
-//per proc state
-struct proc{
-...
-struct mapped_region mapped_regions[MAPNUM];      // arbitrary number 16
-uint64 mapped_region_top;  //free virtual address start
-int o_sz; //original heap size before proc calls mmap
-}
-```
-mmap sys call 
-```c
-//sysfile.c
-//why don't read offsite 
-uint64 sys_mmap(void)
-{ 
-//argfd(5, &offsite) < 0 但是其实在read_mapping可以读取出来
-// if ((!f->readable && (prot & PROT_READ))
-//    || (!f->writable && (prot & PROT_WRITE) && !(flags & MAP_PRIVATE)))
-}
+Implemented MAP PRIVATE copy-on-write (COW) semantics by clearing PTE W, using a reserved software-defined
+PTE bit to mark COW pages, and maintaining per-page reference counts. On write faults, performed page duplication,
+updated page tables, and ensured TLB coherence. Implemented MAP SHARED semantics with correct dirty-page
+write-back to disk during partial munmap() and exec(), integrating with the buffer cache and inode layer. Extended
+fork() system call to duplicate VMAs and propagate COW mappings without eager copying
 
-```
-fcntl.h 
-```c
-//maybe not necessary
-#define PROT_NONE   0x0
-#define PROT_EXEC   0x4
-```
-
+Demonstrated inter-process communication by designing a multi-process Pong game rendered in the command line
+interface. Began implementing a virtio-GPU framebuffer driver to render the Pong game in a window
